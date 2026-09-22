@@ -25,3 +25,6 @@ typed_struct_builder_validators-*.tar
 .elixir_ls
 
 .envrc
+
+# Dialyzer PLTs, when built with PLT_DIR set (as CI does).
+/priv/plts/
