@@ -1,20 +1,39 @@
 # TypedStructBuilderValidators
 
+[![Hex.pm](https://img.shields.io/hexpm/v/typed_struct_builder_validators.svg)](https://hex.pm/packages/typed_struct_builder_validators)
+[![Documentation](https://img.shields.io/badge/hex-docs-blue.svg)](https://hexdocs.pm/typed_struct_builder_validators)
+[![License](https://img.shields.io/hexpm/l/typed_struct_builder_validators.svg)](LICENSE)
+
 TypedStructBuilderValidators is a plugin library for TypedStruct which generates type-safe and validating helper methods for
 creating and updating structs.
 
 ## Installation
 
-If [available in Hex](https://hex.pm/docs/publish), the package can be installed
-by adding `typed_struct_builder_validators` to your list of dependencies in `mix.exs`:
+Add `typed_struct_builder_validators` to your list of dependencies in `mix.exs`,
+alongside `typed_struct` itself:
 
 ```elixir
 def deps do
   [
+    {:typed_struct, "~> 0.3.0"},
     {:typed_struct_builder_validators, "~> 0.1.0"}
   ]
 end
 ```
+
+`validator/1` and `validator/2` are macros called without parentheses, so import
+this project's formatter rules in your `.formatter.exs` to keep `mix format` from
+adding them:
+
+```elixir
+[
+  import_deps: [:typed_struct_builder_validators],
+  inputs: ["{mix,.formatter}.exs", "{config,lib,test}/**/*.{ex,exs}"]
+]
+```
+
+The documentation lives at
+[hexdocs.pm/typed_struct_builder_validators](https://hexdocs.pm/typed_struct_builder_validators).
 
 ## Reasoning
 
@@ -267,3 +286,7 @@ cannot close over variables from the surrounding scope.
   * [typed_struct_ecto_changeset](https://hexdocs.pm/typed_struct_ecto_changeset) —
     another TypedStruct plugin, deriving `Ecto.Changeset` casting from the declared
     fields, if you are already in Ecto territory.
+
+## License
+
+MIT, see [LICENSE](LICENSE).

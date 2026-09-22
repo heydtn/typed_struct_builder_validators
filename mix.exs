@@ -3,13 +3,17 @@ defmodule TypedStructBuilderValidators.MixProject do
 
   @version "0.1.0"
   @repo_url "https://github.com/heydtn/typed_struct_builder_validators"
+  @description "A TypedStruct plugin generating validating typed constructors and updaters."
 
   def project do
     [
       app: :typed_struct_builder_validators,
-      version: "0.1.0",
+      version: @version,
       elixir: "~> 1.19",
       start_permanent: Mix.env() == :prod,
+      name: "TypedStructBuilderValidators",
+      description: @description,
+      source_url: @repo_url,
       deps: deps(),
       dialyzer: dialyzer(),
       docs: docs(),
@@ -46,7 +50,9 @@ defmodule TypedStructBuilderValidators.MixProject do
   defp docs do
     [
       extras: [
-        "README.md": [title: "Overview"]
+        "README.md": [title: "Overview"],
+        "CHANGELOG.md": [title: "Changelog"],
+        LICENSE: [title: "License"]
       ],
       main: "readme",
       source_url: @repo_url,
@@ -65,7 +71,12 @@ defmodule TypedStructBuilderValidators.MixProject do
   defp package do
     [
       licenses: ["MIT"],
-      links: %{"GitHub" => @repo_url}
+      maintainers: ["Nate Heydt"],
+      files: ~w(lib .formatter.exs mix.exs README.md CHANGELOG.md LICENSE),
+      links: %{
+        "GitHub" => @repo_url,
+        "Changelog" => "#{@repo_url}/blob/v#{@version}/CHANGELOG.md"
+      }
     ]
   end
 end
