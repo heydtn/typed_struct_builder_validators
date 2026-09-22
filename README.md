@@ -16,6 +16,76 @@ def deps do
 end
 ```
 
+## Reasoning
+
+A plain `typedstruct` block gets you a struct and a type, and stops there:
+
+```elixir
+typedstruct module: Order do
+  field :id, String.t(), enforce: true
+  field :quantity, non_neg_integer(), enforce: true
+  field :discount, float(), default: 0.0
+end
+```
+
+Nothing here builds an `Order` for you, and nothing says that `quantity` has to
+stay non-negative or that `discount` is a fraction — `enforce: true` only asserts
+that a key is present.
+
+The declared type earns its keep at the edges of a function:
+
+```elixir
+@spec apply_bulk_discount(Order.t()) :: Order.t()
+def apply_bulk_discount(order) do
+  order
+  |> Map.put(:quantity, order.quantity - 10)
+  |> Map.put(:discout, 0.25)
+end
+```
+
+In between those edges, the convenient ways to change a struct are the unchecked
+ones. `Map.put/3` happily adds a misspelled `:discout` key, `%{order | quantity: n}`
+checks that the key exists but not that the value matches its declared type, and
+`struct/2` silently drops anything it doesn't recognize. None of that is visible to
+the `Order.t()` on the way in or the way out, so a struct that stopped being a valid
+`Order` halfway through one function usually surfaces somewhere much later, in code
+that has no idea where the bad value came from.
+
+The alternatives are hand-writing a constructor and a few validating setters for
+every struct and keeping them in sync with the fields forever, or reaching for Ecto's
+embedded schemas and changesets — a large dependency and a lot of machinery when all
+you wanted was a struct that can't be built wrong.
+
+This library is the step in between. Declare the invariants next to the fields and
+every construction and update goes through a generated function with a precise spec:
+
+```elixir
+typedstruct module: Order do
+  plugin TypedStructBuilderValidators
+
+  field :id, String.t(), enforce: true
+  field :quantity, non_neg_integer(), enforce: true
+  field :discount, float(), default: 0.0
+
+  validator &(&1.discount >= 0.0 and &1.discount <= 1.0)
+end
+
+# {:error, ["missing required key(s): :quantity"]}
+Order.new(%{id: "a-1"})
+
+# {:error, ["unknown key(s): :discout (expected any of: :id, :quantity, :discount)"]}
+Order.put(order, %{discout: 0.25})
+
+# {:error, ["&(&1.discount >= 0.0 and &1.discount <= 1.0)"]}
+Order.put(order, %{discount: 2.0})
+
+# Flagged by dialyzer at the line that writes it, not at some later boundary
+Order.put(order, %{quantity: "10"})
+```
+
+The type surface moves from the boundaries of your functions to every point where
+the struct is actually built or changed, which is where the mistakes are made.
+
 ## Summary
 
 A `TypedStruct` plugin that generates validating constructors and updaters.
@@ -186,3 +256,14 @@ only once the struct can be built at all: if a key is missing or unknown,
 
 Because the predicate is inlined, it must be a pure function of the struct; it
 cannot close over variables from the surrounding scope.
+
+## Related items
+
+  * [TypedStruct](https://hexdocs.pm/typed_struct) — the library this is a plugin
+    for, which generates the struct, its `t()` and its `@enforce_keys`.
+  * [Domo](https://hexdocs.pm/domo) — validates struct values against their `t()`,
+    including nested structs, with precondition functions. It does much more type
+    checking at runtime than this does, for a correspondingly heavier build.
+  * [typed_struct_ecto_changeset](https://hexdocs.pm/typed_struct_ecto_changeset) —
+    another TypedStruct plugin, deriving `Ecto.Changeset` casting from the declared
+    fields, if you are already in Ecto territory.
