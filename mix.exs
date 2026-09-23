@@ -3,7 +3,7 @@ defmodule TypedStructBuilderValidators.MixProject do
 
   @version "0.1.0"
   @repo_url "https://github.com/heydtn/typed_struct_builder_validators"
-  @description "A TypedStruct plugin generating validating typed constructors and updaters."
+  @description "A TypedStruct plugin for automatically generating type-safe helper methods for constructing, updating, and validating structs."
 
   def project do
     [

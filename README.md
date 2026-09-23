@@ -4,8 +4,7 @@
 [![Documentation](https://img.shields.io/badge/hex-docs-blue.svg)](https://hexdocs.pm/typed_struct_builder_validators)
 [![License](https://img.shields.io/hexpm/l/typed_struct_builder_validators.svg)](LICENSE)
 
-TypedStructBuilderValidators is a plugin library for TypedStruct which generates type-safe and validating helper methods for
-creating and updating structs.
+TypedStructBuilderValidators is a plugin library for TypedStruct which automatically generates type-safe helper methods for creating, updating, and validating structs.
 
 ## Installation
 
@@ -21,9 +20,7 @@ def deps do
 end
 ```
 
-`validator/1` and `validator/2` are macros called without parentheses, so import
-this project's formatter rules in your `.formatter.exs` to keep `mix format` from
-adding them:
+To call `validator/1` and `validator/2` without parentheses, import this project's formatter rules in your `.formatter.exs`:
 
 ```elixir
 [
@@ -51,7 +48,7 @@ Nothing here builds an `Order` for you, and nothing says that `quantity` has to
 stay non-negative or that `discount` is a fraction — `enforce: true` only asserts
 that a key is present.
 
-The declared type earns its keep at the edges of a function:
+The declared type only helps at the edges of a function:
 
 ```elixir
 @spec apply_bulk_discount(Order.t()) :: Order.t()
@@ -72,8 +69,7 @@ that has no idea where the bad value came from.
 
 The alternatives are hand-writing a constructor and a few validating setters for
 every struct and keeping them in sync with the fields forever, or reaching for Ecto's
-embedded schemas and changesets — a large dependency and a lot of machinery when all
-you wanted was a struct that can't be built wrong.
+embedded schemas and changesets — a lot of machinery when all you wanted was a struct that can't be built wrong.
 
 This library is the step in between. Declare the invariants next to the fields and
 every construction and update goes through a generated function with a precise spec:
