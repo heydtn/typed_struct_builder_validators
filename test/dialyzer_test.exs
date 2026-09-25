@@ -19,6 +19,19 @@ defmodule TypedStructBuilderValidators.DialyzerTest do
 
   @fixtures "test/support/dialyzer_fixtures"
 
+  # The modules the analysis is about. They are built only under `MIX_ENV=test`
+  # (see `elixirc_paths/1` in mix.exs), and a run that has not compiled them
+  # analyzes nothing at all — at which point every assertion here about what
+  # dialyzer does *not* report holds for the wrong reason. So they are checked
+  # for by name before anything is analyzed.
+  @fixture_modules [
+    DialyzerFixtures.Thing,
+    DialyzerFixtures.Correct,
+    DialyzerFixtures.Mistakes,
+    DialyzerFixtures.Plain,
+    DialyzerFixtures.PlainUse
+  ]
+
   # Every mistake in the fixture that dialyzer is expected to catch.
   @mistakes [
     :new_with_wrong_field_type,
@@ -165,9 +178,25 @@ defmodule TypedStructBuilderValidators.DialyzerTest do
 
   @spec beams() :: [charlist()]
   defp beams do
-    "_build/#{Mix.env()}/lib/#{app()}/ebin/*.beam"
-    |> Path.wildcard()
-    |> Enum.map(&String.to_charlist/1)
+    beams = Path.wildcard("_build/#{Mix.env()}/lib/#{app()}/ebin/*.beam")
+    present = MapSet.new(beams, &Path.basename/1)
+
+    case Enum.reject(@fixture_modules, &MapSet.member?(present, "#{&1}.beam")) do
+      [] ->
+        Enum.map(beams, &String.to_charlist/1)
+
+      missing ->
+        flunk("""
+        the fixtures this suite is about were not compiled, so there would be
+        nothing to analyze and nothing to report:
+
+        #{Enum.map_join(missing, "\n", &"  #{inspect(&1)}")}
+
+        They are built under MIX_ENV=test only, and this run is
+        MIX_ENV=#{Mix.env()}. Run `mix test --only dialyzer` with MIX_ENV unset
+        or set to test.
+        """)
+    end
   end
 
   defp app, do: Mix.Project.config()[:app]

@@ -62,5 +62,10 @@ jobs:
         run: mix dialyzer --format github
 
       # Excluded from the default `mix test` run because it needs the PLT above.
+      # MIX_ENV has to be set here as it is for the tests: the job runs in `dev`
+      # for dialyxir's sake, and the fixtures this suite analyzes are only
+      # compiled under `test`.
       - name: Check dialyzer still sees through the generated code
         run: mix test --only dialyzer
+        env:
+          MIX_ENV: test
