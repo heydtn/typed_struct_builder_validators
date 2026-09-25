@@ -1,7 +1,7 @@
 defmodule TypedStructBuilderValidators.MixProject do
   use Mix.Project
 
-  @version "0.1.0"
+  @version "0.2.0"
   @repo_url "https://github.com/heydtn/typed_struct_builder_validators"
   @description "A TypedStruct plugin for automatically generating type-safe helper methods for constructing, updating, and validating structs."
 
@@ -11,6 +11,7 @@ defmodule TypedStructBuilderValidators.MixProject do
       version: @version,
       elixir: "~> 1.19",
       start_permanent: Mix.env() == :prod,
+      elixirc_paths: elixirc_paths(Mix.env()),
       name: "TypedStructBuilderValidators",
       description: @description,
       source_url: @repo_url,
@@ -21,12 +22,19 @@ defmodule TypedStructBuilderValidators.MixProject do
     ]
   end
 
+  # The dialyzer fixtures are only built under `test`, so that `mix dialyzer`
+  # never analyzes the deliberate type errors they contain.
+  defp elixirc_paths(:test), do: ["lib", "test/support"]
+  defp elixirc_paths(_env), do: ["lib"]
+
   # Run "mix help deps" to learn about dependencies.
   defp deps do
     [
       {:typed_struct, "~> 0.3.0"},
       {:credo, "~> 1.7.19", only: :dev, runtime: false},
-      {:dialyxir, "~> 1.4.8", only: :dev, runtime: false},
+      # Also under `test`: it is what puts OTP's :dialyzer on the code path for
+      # the fixture suite in test/dialyzer_test.exs.
+      {:dialyxir, "~> 1.4.8", only: [:dev, :test], runtime: false},
       {:ex_doc, "~> 0.40", only: :dev, runtime: false, warn_if_outdated: true}
     ]
   end

@@ -60,3 +60,7 @@ jobs:
 
       - name: Run dialyzer
         run: mix dialyzer --format github
+
+      # Excluded from the default `mix test` run because it needs the PLT above.
+      - name: Check dialyzer still sees through the generated code
+        run: mix test --only dialyzer

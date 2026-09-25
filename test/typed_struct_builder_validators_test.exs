@@ -160,14 +160,18 @@ defmodule TypedStructBuilderValidatorsTest do
     type
   end
 
-  @two_fields [{:a, quote(do: integer())}, {:b, quote(do: atom())}]
+  @two_fields [{:a, quote(do: integer()), nil}, {:b, quote(do: atom()), nil}]
+
+  # Whether the generated functions can report anything depends on there being
+  # something to report, so the specs that carry an error half need a validator.
+  @a_validator [{quote(do: &(&1.a > 0)), "a must be positive"}]
 
   describe "new/1 spec" do
     test "puts optional fields first and required fields in shorthand form" do
       fields = [
-        {:base, quote(do: float())},
-        {:label, quote(do: String.t())},
-        {:count, quote(do: integer())}
+        {:base, quote(do: float()), nil},
+        {:label, quote(do: String.t()), nil},
+        {:count, quote(do: integer()), nil}
       ]
 
       assert spec_string(:new, fields, [:base, :count]) ==
@@ -180,12 +184,12 @@ defmodule TypedStructBuilderValidatorsTest do
     end
 
     test "emits an all-optional map when nothing is enforced" do
-      assert spec_string(:new, @two_fields, []) ==
+      assert spec_string(:new, @two_fields, [], @a_validator) ==
                "@spec new(%{optional(:a) => integer(), optional(:b) => atom()}) :: {:ok, t()} | {:error, [String.t()]}"
     end
 
     test "preserves declaration order within each group" do
-      fields = for name <- [:z, :y, :x, :w], do: {name, quote(do: integer())}
+      fields = for name <- [:z, :y, :x, :w], do: {name, quote(do: integer()), nil}
 
       assert spec_string(:new, fields, [:y, :w]) ==
                "@spec new(%{optional(:z) => integer(), optional(:x) => integer(), y: integer(), w: integer()}) :: {:ok, t()} | {:error, [String.t()]}"
@@ -197,7 +201,7 @@ defmodule TypedStructBuilderValidatorsTest do
 
     test "omits the missing-key clause when nothing is enforced" do
       rendered =
-        [{:a, quote(do: integer())}]
+        [{:a, quote(do: integer()), nil}]
         |> TypedStructBuilderValidators.__functions__([], [])
         |> Macro.to_string()
 
@@ -229,10 +233,10 @@ defmodule TypedStructBuilderValidatorsTest do
       assert type_string(:updates, @two_fields, [:a, :b], opts) ==
                "@type updates() :: %{optional(:a) => (integer() -> integer()), optional(:b) => (atom() -> atom())}"
 
-      assert spec_string(:put, @two_fields, [:a, :b], [], opts) ==
+      assert spec_string(:put, @two_fields, [:a, :b], @a_validator, opts) ==
                "@spec put(t(), changes()) :: {:ok, t()} | {:error, [String.t()]}"
 
-      assert spec_string(:update, @two_fields, [:a, :b], [], opts) ==
+      assert spec_string(:update, @two_fields, [:a, :b], @a_validator, opts) ==
                "@spec update(t(), updates()) :: {:ok, t()} | {:error, [String.t()]}"
     end
 
@@ -330,7 +334,12 @@ defmodule TypedStructBuilderValidatorsTest do
     end
 
     test "the specs carry the new names" do
-      code = rendered(@two_fields, [:a, :b], [], validate: :check, new: :build, new!: :build!)
+      code =
+        rendered(@two_fields, [:a, :b], @a_validator,
+          validate: :check,
+          new: :build,
+          new!: :build!
+        )
 
       assert code =~ "@spec check(t()) :: :ok | {:error, [String.t()]}"
       assert code =~ "@spec build(%{a: integer(), b: atom()})"
@@ -378,10 +387,8 @@ defmodule TypedStructBuilderValidatorsTest do
       assert error.message =~ "missing required key(s): :high"
     end
 
-    test "the inlined body still reports unknown keys" do
-      error = assert_raise ArgumentError, fn -> OnlyBang.new!(%{low: 1.0, high: 2.0, z: 1}) end
-
-      assert error.message =~ "unknown key(s): :z"
+    test "the inlined body ignores a key the struct does not declare" do
+      assert %OnlyBang{low: 1.0, high: 2.0} = OnlyBang.new!(%{low: 1.0, high: 2.0, z: 1})
     end
 
     test "the inlined body still runs the validators" do
@@ -436,18 +443,141 @@ defmodule TypedStructBuilderValidatorsTest do
 
   describe "put/2 and update/2 specs" do
     test "put takes the struct and an all-optional map, even for enforced fields" do
-      assert spec_string(:put, @two_fields, [:a, :b]) ==
+      assert spec_string(:put, @two_fields, [:a, :b], @a_validator) ==
                "@spec put(t(), %{optional(:a) => integer(), optional(:b) => atom()}) :: {:ok, t()} | {:error, [String.t()]}"
     end
 
     test "update takes the struct and a map of same-type functions" do
-      assert spec_string(:update, @two_fields, [:a, :b]) ==
+      assert spec_string(:update, @two_fields, [:a, :b], @a_validator) ==
                "@spec update(t(), %{optional(:a) => (integer() -> integer()), optional(:b) => (atom() -> atom())}) :: {:ok, t()} | {:error, [String.t()]}"
     end
 
     test "validate takes the struct and returns :ok or errors" do
-      assert spec_string(:validate, @two_fields, [:a, :b]) ==
+      assert spec_string(:validate, @two_fields, [:a, :b], @a_validator) ==
                "@spec validate(t()) :: :ok | {:error, [String.t()]}"
+    end
+
+    # Nothing declared to check means nothing that can fail, and a body dialyzer
+    # can see only ever answers `:ok`. Saying otherwise would leave every caller
+    # matching on `{:error, reasons}` with a clause it reports as unreachable.
+    test "validate is typed as answering only :ok when no validator is declared" do
+      code = rendered(@two_fields, [:a, :b], [], [])
+
+      assert code =~ "@spec validate(t()) :: :ok"
+      assert code =~ "def validate(%__MODULE__{}) do :ok end"
+      # still called, and matched against the one thing it can answer: the call
+      # is what carries `t()` onto the assembled struct.
+      assert code =~ ":ok = validate(candidate)"
+      refute code =~ "case validate(candidate)"
+    end
+
+    # The same reasoning carried through the rest: with nothing to report, `put/2`
+    # answers `{:ok, struct}` and nothing else, and `put!/2` has nothing to raise.
+    # A spec keeping its error half here would put an unreachable clause in the
+    # user's module — a warning from the compiler, before dialyzer is even run.
+    test "put and update drop their error half when no validator is declared" do
+      code = rendered(@two_fields, [:a, :b], [], only: [:put, :put!, :update, :update!])
+
+      assert code =~
+               "@spec put(t(), %{optional(:a) => integer(), optional(:b) => atom()}) :: {:ok, t()}"
+
+      assert code =~
+               "@spec update(t(), %{optional(:a) => (integer() -> integer()), optional(:b) => (atom() -> atom())}) :: {:ok, t()}"
+
+      refute code =~ "raise ArgumentError"
+      assert code =~ "{:ok, value} = put(value, changes)"
+    end
+
+    # `only: [:new!]` inlines the assembly rather than delegating, and its
+    # missing-key case is a clause of its own that raises directly. So the
+    # expression it wraps cannot report anything unless a validator is declared.
+    test "a standalone new! raises only where the assembly it inlines can fail" do
+      code = rendered(@two_fields, [:a], [], only: [:new!])
+
+      assert code =~ ":ok = __tsbuildervalidators_validate__(candidate)"
+      assert code =~ "{:ok, value} ="
+      assert code =~ "def new!(attrs) when is_map(attrs)"
+      # the missing-key clause still raises on its own
+      assert code =~ "__missing_keys__"
+
+      checked = rendered(@two_fields, [:a], @a_validator, only: [:new!])
+      assert checked =~ "raise ArgumentError"
+    end
+
+    test "new keeps its error half while a required key can be missing" do
+      code = rendered(@two_fields, [:a, :b], [], only: [:new, :new!])
+
+      assert code =~
+               "@spec new(%{a: integer(), b: atom()}) :: {:ok, t()} | {:error, [String.t()]}"
+
+      assert code =~ "raise ArgumentError"
+    end
+
+    test "new drops its error half when nothing is enforced and nothing is checked" do
+      code = rendered(@two_fields, [], [], only: [:new, :new!])
+
+      assert code =~
+               "@spec new(%{optional(:a) => integer(), optional(:b) => atom()}) :: {:ok, t()}"
+
+      refute code =~ "raise ArgumentError"
+      refute code =~ "__missing_keys__"
+    end
+  end
+
+  # The generated bodies name every field they touch. `struct/2` and
+  # `Map.update!/3` take the field name as a runtime value and hand back a bare
+  # `struct()`, which costs dialyzer both the module and every field type, so
+  # the specs above would promise more than the code could be checked against.
+  describe "assembly" do
+    test "new builds one struct literal, enforced fields bound in the head" do
+      code = rendered(@two_fields, [:a], @a_validator, only: [:new, :validate])
+
+      assert code =~ "def new(%{a: enforced_a} = attrs)"
+      assert code =~ "candidate = %__MODULE__{"
+      assert code =~ "a: enforced_a,"
+      assert code =~ "%{b: field} -> field"
+    end
+
+    test "new falls back to each field's declared default" do
+      fields = [{:a, quote(do: integer()), nil}, {:b, quote(do: String.t()), "x"}]
+      code = rendered(fields, [:a], [], only: [:new])
+
+      assert code =~ ~s(_ -> "x")
+    end
+
+    test "put takes each field from the changes or leaves it as it was" do
+      code = rendered(@two_fields, [:a], [], only: [:put])
+
+      assert code =~ "%{a: field} -> field"
+      assert code =~ "_ -> value.a"
+      assert code =~ "_ -> value.b"
+    end
+
+    test "update applies each function to the field it names" do
+      code = rendered(@two_fields, [:a], [], only: [:update])
+
+      assert code =~ "%{a: fun} -> fun.(value.a)"
+      assert code =~ "%{b: fun} -> fun.(value.b)"
+    end
+
+    test "nothing is assembled through struct/2, Map.update!/3 or a chain of updates" do
+      code = rendered(@two_fields, [:a], @a_validator, [])
+
+      refute code =~ "struct("
+      refute code =~ "Map.update!"
+      refute code =~ "candidate |"
+    end
+
+    # A key the struct does not declare is not in the argument type either, so
+    # dialyzer reports it where it is written. Looking for one at runtime as well
+    # would cost every call the price of a mistake the types already rule out.
+    test "no runtime work goes into looking for keys the struct does not declare" do
+      code = rendered(@two_fields, [:a], @a_validator, [])
+
+      refute code =~ "map_size"
+      refute code =~ "is_map_key"
+      refute code =~ "Map.keys"
+      refute code =~ "unknown"
     end
   end
 
@@ -469,10 +599,10 @@ defmodule TypedStructBuilderValidatorsTest do
       assert message =~ ":count"
     end
 
-    test "reports unknown keys and lists the accepted ones" do
-      assert {:error, [message]} = Mixed.new(%{base: 1.0, count: 2, typo: 3})
-      assert message =~ "unknown key(s): :typo"
-      assert message =~ "expected any of:"
+    # A key the struct does not declare is not in `new/1`'s argument type, so
+    # dialyzer reports it where it is written. Nothing looks for one at runtime.
+    test "ignores a key the struct does not declare" do
+      assert {:ok, %Mixed{base: 1.0, count: 2}} = Mixed.new(%{base: 1.0, count: 2, typo: 3})
     end
 
     test "accepts any map when nothing is enforced" do
@@ -565,12 +695,12 @@ defmodule TypedStructBuilderValidatorsTest do
       assert error.message =~ "* fn config -> config.factor >= 1.0 end"
     end
 
-    test "raises on missing and unknown keys too" do
+    test "raises on missing keys" do
       assert_raise ArgumentError, ~r/missing required key/, fn -> Mixed.new!(%{}) end
+    end
 
-      assert_raise ArgumentError, ~r/unknown key/, fn ->
-        Mixed.new!(%{base: 1.0, count: 2, typo: 3})
-      end
+    test "ignores a key the struct does not declare" do
+      assert %Mixed{base: 1.0, count: 2} = Mixed.new!(%{base: 1.0, count: 2, typo: 3})
     end
   end
 
@@ -602,9 +732,8 @@ defmodule TypedStructBuilderValidatorsTest do
                Validated.put(config, %{beta_slow: 100.0})
     end
 
-    test "rejects unknown keys", %{config: config} do
-      assert {:error, [message]} = Validated.put(config, %{typo: 1})
-      assert message =~ "unknown key(s): :typo"
+    test "ignores a key the struct does not declare", %{config: config} do
+      assert {:ok, ^config} = Validated.put(config, %{typo: 1})
     end
 
     test "requires a struct of the right type" do
@@ -634,8 +763,8 @@ defmodule TypedStructBuilderValidatorsTest do
       assert error.message =~ "* &(&1.beta_fast > &1.beta_slow)"
     end
 
-    test "raises on unknown keys too", %{config: config} do
-      assert_raise ArgumentError, ~r/unknown key/, fn -> Validated.put!(config, %{typo: 1}) end
+    test "ignores a key the struct does not declare", %{config: config} do
+      assert ^config = Validated.put!(config, %{typo: 1})
     end
 
     test "requires a struct of the right type" do
@@ -667,9 +796,8 @@ defmodule TypedStructBuilderValidatorsTest do
                Validated.update(config, %{factor: &(&1 * 0.0)})
     end
 
-    test "rejects unknown keys", %{config: config} do
-      assert {:error, [message]} = Validated.update(config, %{typo: & &1})
-      assert message =~ "unknown key(s): :typo"
+    test "ignores a key the struct does not declare", %{config: config} do
+      assert {:ok, ^config} = Validated.update(config, %{typo: & &1})
     end
 
     test "requires a struct of the right type" do
@@ -700,10 +828,8 @@ defmodule TypedStructBuilderValidatorsTest do
       assert error.message =~ "* &(&1.beta_fast > &1.beta_slow)"
     end
 
-    test "raises on unknown keys too", %{config: config} do
-      assert_raise ArgumentError, ~r/unknown key/, fn ->
-        Validated.update!(config, %{typo: & &1})
-      end
+    test "ignores a key the struct does not declare", %{config: config} do
+      assert ^config = Validated.update!(config, %{typo: & &1})
     end
 
     test "requires a struct of the right type" do

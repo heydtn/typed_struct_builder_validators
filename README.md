@@ -15,7 +15,7 @@ alongside `typed_struct` itself:
 def deps do
   [
     {:typed_struct, "~> 0.3.0"},
-    {:typed_struct_builder_validators, "~> 0.1.0"}
+    {:typed_struct_builder_validators, "~> 0.2.0"}
   ]
 end
 ```
@@ -88,7 +88,7 @@ end
 # {:error, ["missing required key(s): :quantity"]}
 Order.new(%{id: "a-1"})
 
-# {:error, ["unknown key(s): :discout (expected any of: :id, :quantity, :discount)"]}
+# Flagged by dialyzer: :discout is not in put/2's argument type
 Order.put(order, %{discout: 0.25})
 
 # {:error, ["&(&1.discount >= 0.0 and &1.discount <= 1.0)"]}
@@ -266,11 +266,20 @@ that quotes the offending value.
 
 Validators run against a built struct, so a field left out of `attrs` is
 checked with its declared default rather than skipped. In `new/1` they run
-only once the struct can be built at all: if a key is missing or unknown,
-`new/1` reports that and does not run them.
+only once the struct can be built at all: a missing enforced key is reported
+without running them.
+
+A key the struct does not declare is not in the argument types at all, so
+dialyzer reports it at the line that writes it. Nothing looks for one at
+runtime, and one that reaches a generated function anyway is ignored.
 
 Because the predicate is inlined, it must be a pure function of the struct; it
 cannot close over variables from the surrounding scope.
+
+With no `validator/1` declared there is nothing that can fail, so `validate/1`
+is generated as `@spec validate(t()) :: :ok` and the other functions skip the
+call. Matching on `{:error, reasons}` from it is then a branch dialyzer reports
+as unreachable, until the first validator is declared.
 
 ## Related items
 
